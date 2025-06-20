@@ -7,10 +7,8 @@ import threading # Import threading module
 from CTkMessagebox import CTkMessagebox
 
 from config import APP_TITLE, APP_GEOMETRY, APP_MINSIZE, APPEARANCE_MODE, COLOR_THEME
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
-from utils import center_window, create_treeview, calculate_eta, calculate_duration, open_web_login
+import webbrowser # Import webbrowser module
+from utils import center_window, create_treeview, calculate_eta, calculate_duration
 from handlers.file_handler import read_lines_from_file
 from core.checker_logic import PleskCheckerLogic
 
@@ -29,7 +27,6 @@ class PleskCheckerApp(customtkinter.CTk):
         customtkinter.set_appearance_mode(APPEARANCE_MODE)
         customtkinter.set_default_color_theme(COLOR_THEME)
 
-        self.driver = None # Initialize driver to None
 
         # Initialize the queue for UI updates
         self.ui_queue = queue.Queue()
@@ -217,7 +214,8 @@ class PleskCheckerApp(customtkinter.CTk):
         # Clear all login buttons
         for item_id in list(self.login_buttons.keys()):
             if item_id in self.login_buttons:
-                self.login_buttons[item_id]['button'].destroy() # Access the button object
+                self.login_buttons[item_id]['login_button'].destroy()
+                self.login_buttons[item_id]['view_button'].destroy()
                 del self.login_buttons[item_id]
 
         # Reset UI counts and progress
@@ -436,7 +434,8 @@ Laporkan Bug:
         # Clear all login buttons
         for item_id in list(self.login_buttons.keys()):
             if item_id in self.login_buttons:
-                self.login_buttons[item_id]['button'].destroy()
+                self.login_buttons[item_id]['login_button'].destroy()
+                self.login_buttons[item_id]['view_button'].destroy()
                 del self.login_buttons[item_id]
 
         start_idx = (self.current_page - 1) * self.items_per_page
@@ -473,7 +472,8 @@ Laporkan Bug:
         for item_id in list(self.login_buttons.keys()):
             if item_id not in visible_item_ids:
                 if item_id in self.login_buttons:
-                    self.login_buttons[item_id]['button'].destroy()
+                    self.login_buttons[item_id]['login_button'].destroy()
+                    self.login_buttons[item_id]['view_button'].destroy()
                     del self.login_buttons[item_id]
 
         self.update_pagination()
@@ -503,70 +503,91 @@ Laporkan Bug:
         original_password = item_data[5]
         
         # Hanya buat tombol jika data login lengkap dan tombol belum ada
-        if original_url and original_username and original_password.strip() and item_id not in self.login_buttons:
-            btn = customtkinter.CTkButton(
-                self.tab_valid,
-                text="Login", # Change button text back to "Login"
-                width=70,
-                height=22,
-                fg_color="#007bff",
-                hover_color="#0056b3",
-                command=lambda u=original_url, un=original_username, p=original_password: self.login_single_plesk(u, un, p)
-            )
-            self.login_buttons[item_id] = {'button': btn, 'data': item_data}
-            self.place_login_button(item_id)
+        if original_url and original_username and original_password.strip():
+            if item_id not in self.login_buttons:
+                login_btn = customtkinter.CTkButton(
+                    self.tab_valid,
+                    text="Login",
+                    width=70,
+                    height=22,
+                    fg_color="#007bff",
+                    hover_color="#0056b3",
+                    command=lambda u=original_url: self.open_url_in_browser(u)
+                )
+                view_btn = customtkinter.CTkButton(
+                    self.tab_valid,
+                    text="Lihat",
+                    width=70,
+                    height=22,
+                    fg_color="#6c757d",
+                    hover_color="#5a6268",
+                    command=lambda i=item_id, p=original_password: self.toggle_password_visibility(i, p)
+                )
+                self.login_buttons[item_id] = {
+                    'login_button': login_btn,
+                    'view_button': view_btn,
+                    'data': item_data,
+                    'password_visible': False # Track visibility state
+                }
+            self.place_action_buttons(item_id)
         elif item_id in self.login_buttons:
-            # If button already exists, just ensure it's placed correctly
-            self.place_login_button(item_id)
+            self.place_action_buttons(item_id)
         else:
-            # Logika untuk kasus di mana data login tidak lengkap
             pass
 
-    def place_login_button(self, item_id):
+    def place_action_buttons(self, item_id):
         if item_id in self.login_buttons:
-            btn = self.login_buttons[item_id]['button']
+            login_btn = self.login_buttons[item_id]['login_button']
+            view_btn = self.login_buttons[item_id]['view_button']
+            
             bbox = self.valid_plesk_treeview.bbox(item_id, column='Login')
             if bbox:
-                x_center = bbox[0] + (bbox[2] / 2) - (70 / 2) # 70 is the button width
-                y_center = bbox[1] + (bbox[3] / 2) - (22 / 2) # 22 is the button height
-                btn.place(x=x_center, y=y_center)
+                # Place Login button
+                login_btn_width = 70
+                login_btn_height = 22
+                login_x_center = bbox[0] + (bbox[2] / 2) - (login_btn_width / 2)
+                login_y_center = bbox[1] + (bbox[3] / 2) - (login_btn_height / 2)
+                login_btn.place(x=login_x_center, y=login_y_center)
+
+                # Place View button slightly to the right of Login button
+                view_btn_width = 70
+                view_btn_height = 22
+                view_x_center = login_x_center + login_btn_width + 5 # 5 pixels spacing
+                view_y_center = bbox[1] + (bbox[3] / 2) - (view_btn_height / 2)
+                view_btn.place(x=view_x_center, y=view_y_center)
             else:
-                # If bbox not found (e.g., item not visible), hide the button
-                btn.place_forget()
+                login_btn.place_forget()
+                view_btn.place_forget()
 
     def update_login_buttons_placement(self, event=None):
-        # Pastikan treeview diperbarui sebelum mendapatkan bbox
         self.valid_plesk_treeview.update_idletasks()
         
-        # Perbarui posisi tombol yang sudah ada
         for item_id in self.valid_plesk_treeview.get_children():
-            self.place_login_button(item_id)
+            self.place_action_buttons(item_id)
         
-        # Hapus tombol yang tidak lagi ada di treeview (misalnya, karena paginasi)
         current_treeview_items = set(self.valid_plesk_treeview.get_children())
         for item_id in list(self.login_buttons.keys()):
             if item_id not in current_treeview_items:
                 if item_id in self.login_buttons:
-                    self.login_buttons[item_id]['button'].destroy()
+                    self.login_buttons[item_id]['login_button'].destroy()
+                    self.login_buttons[item_id]['view_button'].destroy()
                     del self.login_buttons[item_id]
 
-    def initialize_driver(self):
-        if self.driver is None:
-            try:
-                options = webdriver.ChromeOptions()
-                # options.add_argument('--headless') # Uncomment this line to run Chrome in headless mode
-                options.add_argument('--disable-gpu')
-                options.add_argument('--no-sandbox')
-                options.add_argument('--disable-dev-shm-usage')
-                options.add_argument('--ignore-certificate-errors') # Tambahkan opsi ini untuk mengatasi masalah SSL
-                
-                service = Service(ChromeDriverManager().install())
-                self.driver = webdriver.Chrome(service=service, options=options)
-                self.driver.set_page_load_timeout(15) # Set page load timeout
-                CTkMessagebox(title="Info", message="Browser siap digunakan.", icon="info")
-            except Exception as e:
-                CTkMessagebox(title="Error", message=f"Gagal menginisialisasi browser: {e}", icon="warning")
-                self.driver = None # Ensure driver is None if initialization fails
+    def toggle_password_visibility(self, item_id, original_password):
+        item_info = self.login_buttons.get(item_id)
+        if item_info:
+            current_values = list(self.valid_plesk_treeview.item(item_id, 'values'))
+            if item_info['password_visible']:
+                # Hide password
+                current_values[3] = '*' * len(original_password)
+                item_info['view_button'].configure(text="Lihat")
+            else:
+                # Show password
+                current_values[3] = original_password
+                item_info['view_button'].configure(text="Sembunyi")
+            
+            self.valid_plesk_treeview.item(item_id, values=current_values)
+            item_info['password_visible'] = not item_info['password_visible']
 
     def on_closing(self):
         """Handler for window closing event"""
@@ -582,27 +603,15 @@ Laporkan Bug:
             # Cancel the UI queue processing loop
             if self._after_id:
                 self.after_cancel(self._after_id)
-
-            # Quit the Selenium driver if it's active
-            if self.driver:
-                try:
-                    self.driver.quit()
-                except Exception as e:
-                    print(f"Error saat menutup driver: {e}")
             
             self.destroy() # Destroy the main window directly
 
-    def login_single_plesk(self, url, username, password):
-        # This function will be called by each individual "Login" button
-        self.update_status(f"Mencoba login ke: {url}")
-        
-        # Initialize driver if not already initialized
-        self.initialize_driver()
-
-        if self.driver:
-            open_web_login(self.driver, url, username, password)
-        else:
-            CTkMessagebox(title="Error", message="Browser tidak dapat diinisialisasi. Tidak dapat melanjutkan login.", icon="warning")
+    def open_url_in_browser(self, url):
+        self.update_status(f"Membuka URL: {url}")
+        try:
+            webbrowser.open_new_tab(url)
+        except Exception as e:
+            CTkMessagebox(title="Error", message=f"Gagal membuka browser: {e}", icon="warning")
 
 if __name__ == "__main__":
     app = PleskCheckerApp()
