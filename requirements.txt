@@ -1,0 +1,6 @@
+requests
+colorama
+customtkinter
+CTkMessagebox
+selenium
+webdriver-manager

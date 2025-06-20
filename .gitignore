@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python/
+env/
+venv/
+.venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Output files
+output.txt
+list_plesk.txt
+list.txt
+test.txt
+valid.txt
+valid2.txt
+valid_plesk_logins.txt
+valid_plesk_status.txt
+
+# Backup folder
+backup/
+
+# Cline's memory bank
+memory-bank/
+
+# WebDriver Manager cache
+.wdm/
